@@ -1,0 +1,715 @@
+{
+  "name": "M&A data",
+  "nodes": [
+    {
+      "parameters": {
+        "inputSource": "passthrough"
+      },
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        0,
+        -224
+      ],
+      "id": "81783156-2785-4cc9-a5fb-b9cb43a1d225",
+      "name": "Called by main wf"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        -416
+      ],
+      "id": "61d7bbb1-b984-4d54-a47c-2819f1542786",
+      "name": "When clicking ‘Execute workflow’"
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.url }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.rssFeedRead",
+      "typeVersion": 1.2,
+      "position": [
+        336,
+        -320
+      ],
+      "id": "dafb08be-444f-4b00-afb0-e9d9a47da8f3",
+      "name": "RSS Read",
+      "retryOnFail": true,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Small 53-bit string hash, no external library needed\nfunction hash53(str) {\n  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;\n  for (let i = 0; i < str.length; i++) {\n    const ch = str.charCodeAt(i);\n    h1 = Math.imul(h1 ^ ch, 2654435761);\n    h2 = Math.imul(h2 ^ ch, 1597334677);\n  }\n  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);\n  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);\n  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16);\n}\n\n// Remove HTML tags and common HTML entities\nfunction stripHtml(s) {\n  return String(s || '')\n    .replace(/<[^>]*>/g, ' ')\n    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&quot;/g, '\"')\n    .replace(/&#39;|&apos;/g, \"'\").replace(/&lt;/g, '<').replace(/&gt;/g, '>')\n    .replace(/\\s+/g, ' ')\n    .trim();\n}\n\nconst seen = new Set();\nconst out = [];\n\nfor (const item of $input.all()) {\n  const j = item.json;\n  const link = j.link || '';\n  let title = stripHtml(j.title);\n  if (!title) continue;\n\n  // Google News titles end with \" - Source name\": remove it\n  if (link.includes('news.google.com')) title = title.replace(/\\s+-\\s+[^-]+$/, '');\n\n  // Normalised title = basis of the fingerprint\n  const normTitle = title.toLowerCase()\n    .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/[^a-z0-9 ]/g, ' ')\n    .replace(/\\s+/g, ' ')\n    .trim();\n\n  const content_hash = hash53(normTitle);\n  if (seen.has(content_hash)) continue;   // duplicate inside this same batch\n  seen.add(content_hash);\n\n  const summary = stripHtml(j.contentSnippet || j.content || j.description || '').slice(0, 600);\n\n  let published = new Date(j.isoDate || j.pubDate || Date.now());\n  if (isNaN(published)) published = new Date();\n\n  out.push({ json: {\n    content_hash,\n    title,\n    url: link,\n    summary,\n    published_at: published.toISOString(),\n  }});\n}\n\nreturn out;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        512,
+        -320
+      ],
+      "id": "d0b73ed9-deff-42b8-a24c-c703506f4681",
+      "name": "Clean&hash"
+    },
+    {
+      "parameters": {
+        "maxItems": 5
+      },
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [
+        1040,
+        -400
+      ],
+      "id": "85f3e3e5-0a5a-4461-a1e6-65eba9da3a74",
+      "name": "Limit per run"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO articles (content_hash, url, title, summary, published_at)\nVALUES ($1, $2, $3, $4, $5::timestamptz)\nON CONFLICT (content_hash) DO UPDATE SET processed_at = now()\n  WHERE articles.is_ma IS NULL\nRETURNING id, content_hash, title, url, summary, published_at;",
+        "options": {
+          "queryReplacement": "={{ [$json.content_hash, $json.url, $json.title, $json.summary, $json.published_at] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        1200,
+        -544
+      ],
+      "id": "a7d4b38d-8aaf-4b1f-b04e-189b3e10bb9f",
+      "name": "Save article if new",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "postgres": {
+          "id": "WzmdO87OLJ5MAXTf",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "8eaa0b33-efe7-49ad-bf5d-abc61f86b780",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "number",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1392,
+        -784
+      ],
+      "id": "34d27048-1d42-4c5a-9e9b-99337ccaa96c",
+      "name": "New article?"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You classify financial news for an M&A tracking database.\n\nDecide whether this article reports a SPECIFIC M&A transaction between named companies: an acquisition, merger, takeover bid, purchase of a majority or minority stake in a company, or purchase of a business unit or division. Announced, agreed, pending, completed, rumoured or terminated deals all count.\n\nIt is NOT an M&A transaction if it is: a venture capital or funding round, an IPO, a partnership or joint venture without a transfer of ownership, a product launch, an executive appointment, general market commentary, a roundup listing several deals, or an announcement that does not name both the buyer and the target.\n\nTitle: {{ $json.title }}\nPublished: {{ $json.published_at }}\nText: {{ $json.summary }}",
+        "hasOutputParser": true,
+        "batching": {
+          "batchSize": 1,
+          "delayBetweenBatches": 8000
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        1696,
+        -832
+      ],
+      "id": "98d347d7-a164-47e2-8aab-31bdefe43ed1",
+      "name": "Classify M&A",
+      "retryOnFail": true,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-20b",
+        "options": {
+          "temperature": 0
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        1680,
+        -640
+      ],
+      "id": "68433c1e-2bf3-410e-8710-58873fc0d1cd",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "JHCBobjxeUGVA8CT",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n    \"is_ma\": true,\n    \"reason\": \"Short explanation of the decision\"\n  }"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        1840,
+        -640
+      ],
+      "id": "b4fc2f20-cb7a-4c16-802d-12fc89d2dec9",
+      "name": "Structured Output Parser"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "78315e7d-6702-4db1-b20f-64e6b833091f",
+              "leftValue": "={{ $json.output.is_ma }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        1984,
+        -832
+      ],
+      "id": "22815770-f393-4aed-9eb5-89289bdc220d",
+      "name": "Is M&A?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE articles SET is_ma = false WHERE id = $1::int;",
+        "options": {
+          "queryReplacement": "={{ [ $('New article?').item.json.id ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        2208,
+        -736
+      ],
+      "id": "47b0a1cc-d16e-44d3-972c-364258195487",
+      "name": "Mark not M&A",
+      "credentials": {
+        "postgres": {
+          "id": "WzmdO87OLJ5MAXTf",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You extract structured M&A deal data from a news article for a database.\nUse ONLY information stated in the article. Never guess or invent values.\n\nFields:\n- acquirer: the buying company (for a merger, the first company named).\n- target: the company, stake or business unit being acquired.\n- target_description: what the target does, max 12 words (e.g. \"cloud security software provider\"). \"\" if unknown.\n- deal_type: exactly one of acquisition, merger, majority_stake, minority_stake, asset_purchase, other.\n- status: exactly one of announced, pending, completed, terminated, rumoured.\n- value_millions: deal value in millions of the stated currency (e.g. $1.2 billion → 1200). 0 if not disclosed.\n- currency: 3-letter ISO code (USD, EUR, GBP...). \"\" if no value is disclosed.\n- geography: country of the target company. \"\" if unknown.\n- announced_date: YYYY-MM-DD only if the article states the date, otherwise \"\".\n- rationale: why the deal is happening, max 25 words. \"\" if not stated.\n- confidence: number from 0 to 1, how sure you are that the fields above are correct.\n\nArticle:\nTitle: {{ $('New article?').item.json.title }}\nPublished: {{ $('New article?').item.json.published_at }}\nText: {{ $('New article?').item.json.summary }}",
+        "hasOutputParser": true,
+        "batching": {
+          "batchSize": 1,
+          "delayBetweenBatches": 12000
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        2224,
+        -1136
+      ],
+      "id": "24f34389-08c7-40e7-9b3e-073d344cf4d4",
+      "name": "Extract deal",
+      "retryOnFail": true,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-20b",
+        "options": {
+          "temperature": 0
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        2528,
+        -704
+      ],
+      "id": "c215f45f-ee04-4084-948c-f0f3257d4ef7",
+      "name": "Groq Chat Model1",
+      "credentials": {
+        "groqApi": {
+          "id": "JHCBobjxeUGVA8CT",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsonSchemaExample": "{\n  \"acquirer\": \"Example Corp\",\n  \"target\": \"Target Ltd\",\n  \"target_description\": \"cloud security software provider\",\n  \"deal_type\": \"acquisition\",\n  \"status\": \"announced\",\n  \"value_millions\": 1200,\n  \"currency\": \"USD\",\n  \"geography\": \"United States\",\n  \"announced_date\": \"2026-10-14\",\n  \"rationale\": \"Expand its cloud security offering\",\n  \"confidence\": 0.9\n}"
+      },
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        2368,
+        -960
+      ],
+      "id": "cd6a3fb4-2098-4848-8fac-e22524c852d0",
+      "name": "Structured Output Parser1",
+      "retryOnFail": true,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "const extraction_failed = !$json.output;   // LLM error (e.g. rate limit) → retry later\nconst out = $json.output || {};\nconst art = $('New article?').item.json;\n\n// --- helpers ---\nconst SUFFIXES = new Set(['inc','incorporated','corp','corporation','co','company','ltd','limited',\n  'plc','llc','lp','sa','sas','se','ag','gmbh','nv','bv','spa','ab','asa','oyj',\n  'group','holding','holdings','the']);\n\n// \"Microsoft Corp.\" and \"Microsoft Corporation\" both become \"microsoft\"\nfunction normName(s) {\n  return String(s || '').toLowerCase()\n    .normalize('NFD').replace(/[\\u0300-\\u036f]/g, '')\n    .replace(/&/g, ' and ')\n    .replace(/[^a-z0-9 ]/g, ' ')\n    .split(/\\s+/).filter(w => w && !SUFFIXES.has(w))\n    .join(' ');\n}\nconst clean = s => String(s ?? '').trim();\nconst EMPTY = ['', 'unknown', 'n/a', 'na', 'none', 'not disclosed', 'undisclosed'];\nconst errors = [];\n\n// --- parties ---\nconst acquirer = clean(out.acquirer);\nconst target = clean(out.target);\nif (EMPTY.includes(acquirer.toLowerCase())) errors.push('missing acquirer');\nif (EMPTY.includes(target.toLowerCase())) errors.push('missing target');\nconst aKey = normName(acquirer), tKey = normName(target);\nif (aKey && aKey === tKey) errors.push('acquirer equals target');\n\n// --- type and status: only allowed values ---\nconst TYPES = ['acquisition','merger','majority_stake','minority_stake','asset_purchase','other'];\nconst STATUSES = ['announced','pending','completed','terminated','rumoured'];\nlet deal_type = clean(out.deal_type).toLowerCase();\nif (!TYPES.includes(deal_type)) deal_type = 'other';\nlet status = clean(out.status).toLowerCase();\nif (!STATUSES.includes(status)) status = 'announced';\n\n// --- value and currency: 0 or nonsense becomes empty ---\nlet value = Number(out.value_millions);\nif (!isFinite(value) || value <= 0 || value > 2000000) value = '';\nlet currency = clean(out.currency).toUpperCase();\nif (value === '' || !/^[A-Z]{3}$/.test(currency)) currency = '';\n\n// --- date: must be valid and not in the future, else use the article date ---\nlet announced_date = clean(out.announced_date);\nconst d = new Date(announced_date);\nconst tomorrow = Date.now() + 86400000;\nif (!/^\\d{4}-\\d{2}-\\d{2}$/.test(announced_date) || isNaN(d) || d.getTime() > tomorrow || d.getFullYear() < 2000) {\n  announced_date = String(art.published_at || '').slice(0, 10);\n}\n\n// --- confidence: number between 0 and 1 ---\nlet confidence = Number(out.confidence);\nif (!isFinite(confidence)) confidence = 0.5;\nconfidence = Math.round(Math.min(1, Math.max(0, confidence)) * 100) / 100;\nif (confidence < 0.5) errors.push('low confidence');\n\n// --- deal key: for mergers, order does not matter ---\nconst deal_key = deal_type === 'merger'\n  ? [aKey, tKey].sort().join('|')\n  : `${aKey}|${tKey}`;\n\nreturn { json: {\n  valid: errors.length === 0,\n  errors: errors.join(', '),\n  deal_key,\n  acquirer,\n  target,\n  target_description: clean(out.target_description).slice(0, 200),\n  deal_type,\n  status,\n  value_m: value === '' ? '' : String(value),\n  currency,\n  geography: clean(out.geography).slice(0, 80),\n  announced_date,\n  rationale: clean(out.rationale).slice(0, 300),\n  confidence: String(confidence),\n  source_url: art.url || '',\n  article_id: String(art.id),\n}};"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2592,
+        -1136
+      ],
+      "id": "9f19dc22-b9e3-4425-b1e6-7a7c6db2bb47",
+      "name": "Validate&normalise"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "fbecdc9a-a044-4105-9b9c-7ba7b5459ecc",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        2816,
+        -1136
+      ],
+      "id": "8ae12ddb-1b5e-4bca-acfa-d8b99bf17040",
+      "name": "Valid deal?"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH d AS (\n  INSERT INTO deals (deal_key, acquirer, target, target_description, deal_type, status,\n                     value_m, currency, geography, announced_date, rationale, confidence, source_url)\n  VALUES ($1, $2, $3, NULLIF($4,''), $5, $6,\n          NULLIF($7,'')::numeric, NULLIF($8,''), NULLIF($9,''), NULLIF($10,'')::date,\n          NULLIF($11,''), $12::numeric, $13)\n  ON CONFLICT (deal_key) DO UPDATE SET\n    target_description = COALESCE(deals.target_description, EXCLUDED.target_description),\n    deal_type      = CASE WHEN deals.deal_type = 'other' THEN EXCLUDED.deal_type ELSE deals.deal_type END,\n    status         = CASE WHEN deals.status IN ('completed','terminated') THEN deals.status ELSE EXCLUDED.status END,\n    value_m        = COALESCE(deals.value_m, EXCLUDED.value_m),\n    currency       = CASE WHEN deals.value_m IS NULL THEN EXCLUDED.currency ELSE deals.currency END,\n    geography      = COALESCE(deals.geography, EXCLUDED.geography),\n    announced_date = LEAST(deals.announced_date, EXCLUDED.announced_date),\n    rationale      = COALESCE(deals.rationale, EXCLUDED.rationale),\n    confidence     = GREATEST(deals.confidence, EXCLUDED.confidence),\n    source_count   = deals.source_count + 1,\n    last_seen      = now()\n  RETURNING id, acquirer, target, value_m, currency, source_count, (xmax = 0) AS is_new\n)\nUPDATE articles a\nSET is_ma = true, deal_id = d.id\nFROM d\nWHERE a.id = $14::int\nRETURNING d.id AS deal_id, d.acquirer, d.target, d.value_m, d.currency, d.source_count, d.is_new;",
+        "options": {
+          "queryReplacement": "={{ [$json.deal_key, $json.acquirer, $json.target, $json.target_description, $json.deal_type, $json.status, $json.value_m, $json.currency, $json.geography, $json.announced_date, $json.rationale, $json.confidence, $json.source_url, $json.article_id] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        3040,
+        -1232
+      ],
+      "id": "0e6545ef-bf82-4436-a202-becf3b77b2e4",
+      "name": "Save or update deal?",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "postgres": {
+          "id": "WzmdO87OLJ5MAXTf",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const google = (q, region = 'US') => {\n  const r = {\n    US: 'hl=en-US&gl=US&ceid=US:en',\n    GB: 'hl=en-GB&gl=GB&ceid=GB:en',\n  }[region];\n  return `https://news.google.com/rss/search?q=${encodeURIComponent(q)}&${r}`;\n};\n\nconst feeds = [\n  'https://www.prnewswire.com/rss/financial-services-latest-news/acquisitions-mergers-and-takeovers-list.rss',\n  google('\"agrees to acquire\" when:2d'),\n  google('\"to acquire\" billion when:2d'),\n  google('\"merger agreement\" when:2d'),\n  google('\"takeover bid\" OR \"takeover offer\" when:2d', 'GB'),\n  google('\"majority stake\" acquire when:2d'),\n];\n\nreturn feeds.map(url => ({ json: { url } }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        -320
+      ],
+      "id": "56eef213-2a92-4c74-add2-5c71d980bf7c",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT content_hash\nFROM articles\nWHERE content_hash = ANY(string_to_array($1, ','))\n  AND is_ma IS NOT NULL;",
+        "options": {
+          "queryReplacement": "={{ [ $('Clean&hash').all().map(i => i.json.content_hash).join(',') ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        672,
+        -320
+      ],
+      "id": "d20e53d6-5ea4-4429-9687-9f53bfd45e9b",
+      "name": "Find seen articles",
+      "alwaysOutputData": true,
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "id": "WzmdO87OLJ5MAXTf",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const seen = new Set(\n  $input.all().map(i => i.json.content_hash).filter(Boolean)\n);\n\nreturn $('Clean&hash').all().filter(i => !seen.has(i.json.content_hash));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        848,
+        -320
+      ],
+      "id": "3112e9e0-49f3-4838-bd85-e0c2925878be",
+      "name": "keep unseen"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE articles SET is_ma = true\nWHERE id = $1::int AND $2::boolean = false;",
+        "options": {
+          "queryReplacement": "={{ [$json.article_id, $json.extraction_failed] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        3024,
+        -1024
+      ],
+      "id": "2684c487-b844-455d-929d-dd3533713765",
+      "name": "Mark rejected",
+      "credentials": {
+        "postgres": {
+          "id": "WzmdO87OLJ5MAXTf",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-3.1-flash-lite",
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1.2,
+      "position": [
+        2224,
+        -976
+      ],
+      "id": "ff84371d-9072-4653-ad83-56f88f207690",
+      "name": "Google Gemini Chat Model",
+      "credentials": {
+        "googlePalmApi": {
+          "id": null,
+          "name": "",
+          "__aiGatewayManaged": true
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Called by main wf": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "When clicking ‘Execute workflow’": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RSS Read": {
+      "main": [
+        [
+          {
+            "node": "Clean&hash",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clean&hash": {
+      "main": [
+        [
+          {
+            "node": "Find seen articles",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Limit per run": {
+      "main": [
+        [
+          {
+            "node": "Save article if new",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save article if new": {
+      "main": [
+        [
+          {
+            "node": "New article?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "New article?": {
+      "main": [
+        [
+          {
+            "node": "Classify M&A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Classify M&A",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Classify M&A",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Classify M&A": {
+      "main": [
+        [
+          {
+            "node": "Is M&A?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is M&A?": {
+      "main": [
+        [
+          {
+            "node": "Extract deal",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark not M&A",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model1": {
+      "ai_languageModel": [
+        []
+      ]
+    },
+    "Structured Output Parser1": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Extract deal",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract deal": {
+      "main": [
+        [
+          {
+            "node": "Validate&normalise",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate&normalise": {
+      "main": [
+        [
+          {
+            "node": "Valid deal?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid deal?": {
+      "main": [
+        [
+          {
+            "node": "Save or update deal?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "RSS Read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Find seen articles": {
+      "main": [
+        [
+          {
+            "node": "keep unseen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "keep unseen": {
+      "main": [
+        [
+          {
+            "node": "Limit per run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Extract deal",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "ffcb365f-e32a-4393-971a-92fdae3e1475",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "aa23814b3ae9bc060dfe8ef467fde5016449dbd19af80bbe5afadf0e8861cc80"
+  },
+  "nodeGroups": [],
+  "id": "pilZpDjFsLp5fQpB",
+  "tags": []
+}

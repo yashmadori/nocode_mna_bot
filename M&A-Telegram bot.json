@@ -1,0 +1,707 @@
+{
+  "name": "M&A-Telegram bot",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.5,
+      "position": [
+        0,
+        0
+      ],
+      "id": "ac651e0e-1e4a-42e8-999f-04982f0104e1",
+      "name": "Telegram Trigger",
+      "webhookId": "e40d1b7a-84bb-402f-82ad-c6989b5874c8",
+      "credentials": {
+        "telegramApi": {
+          "id": "3fWdiwNWnFfTR2yZ",
+          "name": "M&A bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const msg = $input.first().json.message || {};\nconst text = String(msg.text || '').trim();\n\n// \"/company@MyBot EQT\"  ->  command = \"company\", arg = \"EQT\"\nconst m = text.match(/^\\/(\\w+)(?:@\\w+)?\\s*([\\s\\S]*)$/);\nlet command = m ? m[1].toLowerCase() : '';\nlet arg = m ? m[2].trim().slice(0, 60) : '';\nlet note = '';\n\nconst needsArg = ['deals', 'company', 'trend'];\nconst example = { deals: 'cybersecurity', company: 'Microsoft', trend: 'AI' };\n\nif (!m) {\n  note = 'I only understand commands.';\n  command = 'help';\n} else if (needsArg.includes(command) && !arg) {\n  note = `Please add a keyword, e.g. /${command} ${example[command]}`;\n  command = 'help';\n} else if (!needsArg.includes(command) && command !== 'news') {\n  command = 'help';\n}\n\n// Whole-word search pattern for Postgres: \"AI\" matches \"AI\", not \"Spain\" or \"said\"\nconst escaped = arg.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\nconst pattern = `\\\\m${escaped}\\\\M`;\n\nreturn [{ json: {\n  chat_id: msg.chat?.id,\n  first_name: msg.from?.first_name || '',\n  command,\n  arg,\n  pattern,\n  note,\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ],
+      "id": "3d458af0-0f62-456f-af55-8af81edeca6c",
+      "name": "Parse command"
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "deals",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "239e2ffd-a019-4953-b8cc-21c322675b7b"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "deals"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "0e0158e1-d87c-4e22-9237-d5ab6e0a2139",
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "company",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "company"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "ad642de9-82e4-4c96-8ae0-29cefefc7cb6",
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "trend",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "trend"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "d8627752-7869-46da-8745-c7535c59ef96",
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "help",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "help"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "b2c7f76e-7771-4860-a2bf-f172b4bda21d",
+                    "leftValue": "={{ $json.command }}",
+                    "rightValue": "news",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        448,
+        0
+      ],
+      "id": "a53a4940-4caf-464f-889c-31b1be3e71cf",
+      "name": "Route command"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "=  {{ $json.note ? $json.note + '\\n\\n' : '' }}M&A deal tracker — commands:\n  /deals <keyword> — deals matching a keyword (e.g. /deals cybersecurity)\n  /company <name> — deals where a company is buyer or target (e.g. /company EQT)\n  /trend <keyword> — number of deals per month (e.g. /trend AI)\n/news — overview of articles processed in the last 24 hours",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        672,
+        288
+      ],
+      "id": "06c3a5f9-2134-4f7d-a054-2b007e662f04",
+      "name": "Send help",
+      "webhookId": "0c8324fc-19d6-455a-8e09-b31072f3bcfd",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "telegramApi": {
+          "id": "3fWdiwNWnFfTR2yZ",
+          "name": "M&A bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const ctx = $('Parse command').first().json;\n\n// Remove the empty item created by \"Always Output Data\" when there are no results\nconst rows = $input.all()\n  .map(i => i.json)\n  .filter(r => Object.keys(r).length > 0 && !(Object.keys(r).length === 1 && 'success' in r));\n\nreturn [{ json: {\n  command: ctx.command,\n  arg: ctx.arg,\n  chat_id: ctx.chat_id,\n  count: rows.length,\n  rows: JSON.stringify(rows),\n}}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        992,
+        -64
+      ],
+      "id": "b67c7ed0-9e4d-4754-bcd3-e51b5bdb1984",
+      "name": "Pack results"
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=You are an M&A analyst assistant answering inside a Telegram chat.\n\nThe user sent: /{{ $json.command }} {{ $json.arg }}\nNumber of database rows: {{ $json.count }}\nDatabase rows (JSON): {{ $json.rows }}\n\nWrite the reply using ONLY these rows. Never add deals, values or facts that are not in the rows.\n\nFormat rules:\n- Plain text only: no Markdown, no asterisks, no tables.\n- If there are 0 rows: say that no deals were found for \"{{ $json.arg }}\" and suggest trying another keyword or company name.\n- For /deals and /company: one short intro line, then one block per deal:\n  • Acquirer → Target (deal type, status)\n  Value: format value_m with its currency (e.g. 1200 USD → USD 1.2bn, 350 EUR → EUR 350m), or \"undisclosed\" if empty\n  Date: announced_date · Geography\n  Why: the rationale in one short sentence (skip this line if empty)\n  Source: source_url\n- For /trend: one line per month (e.g. \"2026-09: 4 deals — e.g. A → B\"), then 1–2 sentences describing the trend (rising, falling or stable). With fewer than 2 months of data, say that the history is still too short to identify a trend.\n- Keep the whole reply under 3000 characters.\n- For /news (overrides the 0-rows rule above): start with \"Last 24 hours: X articles processed, Y about M&A.\" using total_articles and ma_articles from the first row. Then list the M&A articles: \"• Acquirer → Target — headline\" (add the value if available), followed by the source URL. End with one line saying how many non-M&A articles were filtered out. If there are 0 rows, say that no articles were processed in the last 24 hours.",
+        "batching": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.chainLlm",
+      "typeVersion": 1.9,
+      "position": [
+        1216,
+        -64
+      ],
+      "id": "8763119c-1f44-4218-af96-6b3cbfc812b3",
+      "name": "Write answer",
+      "retryOnFail": true,
+      "waitBetweenTries": 5000
+    },
+    {
+      "parameters": {
+        "model": "openai/gpt-oss-120b",
+        "options": {
+          "temperature": 0.2
+        }
+      },
+      "type": "@n8n/n8n-nodes-langchain.lmChatGroq",
+      "typeVersion": 1,
+      "position": [
+        1200,
+        128
+      ],
+      "id": "10dff156-0f3d-4c51-9814-c8a976700cbe",
+      "name": "Groq Chat Model",
+      "credentials": {
+        "groqApi": {
+          "id": "JHCBobjxeUGVA8CT",
+          "name": "Groq account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Parse command').first().json.chat_id }}",
+        "text": "={{ $json.text.slice(0, 4000) }}",
+        "additionalFields": {
+          "appendAttribution": false,
+          "disable_web_page_preview": true
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1584,
+        -64
+      ],
+      "id": "ac60cb8a-9d3b-4c3f-a4e3-b1ad93d11a2b",
+      "name": "Send answers",
+      "webhookId": "4680848b-1996-4f5f-9922-a1a7f7cf8d18",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "telegramApi": {
+          "id": "3fWdiwNWnFfTR2yZ",
+          "name": "M&A bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "2d9ecbb5-c231-412d-ac4c-9df59508fc6b",
+              "name": "run_started",
+              "value": "={{ $now.toISO() }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.5,
+      "position": [
+        224,
+        608
+      ],
+      "id": "3e05e67e-5f3c-40ca-a55c-812189cc1995",
+      "name": "Start run"
+    },
+    {
+      "parameters": {
+        "workflowId": {
+          "__rl": true,
+          "value": "pilZpDjFsLp5fQpB",
+          "mode": "list",
+          "cachedResultUrl": "/workflow/pilZpDjFsLp5fQpB",
+          "cachedResultName": "M&A data"
+        },
+        "workflowInputs": {
+          "mappingMode": "defineBelow",
+          "value": {},
+          "matchingColumns": [],
+          "schema": [],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": true
+        },
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      },
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.4,
+      "position": [
+        448,
+        608
+      ],
+      "id": "914efc6e-963e-4ef8-a1a1-5112eb60577a",
+      "name": "Run ingestion",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  (SELECT count(*) FROM articles WHERE processed_at >= $1::timestamptz)               AS new_articles,\n  (SELECT count(*) FROM articles WHERE processed_at >= $1::timestamptz AND is_ma)     AS ma_articles,\n  (SELECT count(*) FROM deals WHERE first_seen >= $1::timestamptz)                    AS new_deals,\n  (SELECT count(*) FROM deals WHERE last_seen >= $1::timestamptz\n                                AND first_seen < $1::timestamptz)                     AS updated_deals,\n  (SELECT count(*) FROM deals)                                                        AS total_deals;",
+        "options": {
+          "queryReplacement": "={{ [ $('Start run').first().json.run_started ] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        672,
+        608
+      ],
+      "id": "e542aa51-92af-455c-996f-871759b140eb",
+      "name": "Ingestion stats",
+      "executeOnce": true,
+      "credentials": {
+        "postgres": {
+          "id": "WzmdO87OLJ5MAXTf",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "8834540662",
+        "text": "=  📥 Ingestion finished   New articles: {{ $json.new_articles }}   M&A articles: {{ $json.ma_articles }}   New deals: {{ $json.new_deals }}   Updated deals (duplicates merged): {{ $json.updated_deals }}   Total deals in database: {{ $json.total_deals }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        896,
+        608
+      ],
+      "id": "3be45fc4-9577-46be-be95-b5bef5e79881",
+      "name": "Send ingestion report",
+      "webhookId": "770e1eca-7674-4198-a759-10816d258948",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "telegramApi": {
+          "id": "3fWdiwNWnFfTR2yZ",
+          "name": "M&A bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT a.title, a.url, a.published_at, a.is_ma,\n       d.acquirer, d.target, d.value_m, d.currency,\n       count(*) OVER ()                         AS total_articles,\n       count(*) FILTER (WHERE a.is_ma) OVER ()  AS ma_articles\nFROM articles a\nLEFT JOIN deals d ON d.id = a.deal_id\nWHERE a.processed_at >= now() - interval '24 hours'\nORDER BY a.is_ma DESC NULLS LAST, a.published_at DESC\nLIMIT 25;",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        672,
+        448
+      ],
+      "id": "166a2e2e-03b2-4b4e-9ea4-f1c394ca6ad1",
+      "name": "Recent news",
+      "alwaysOutputData": true,
+      "retryOnFail": true,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "postgres": {
+          "id": "WzmdO87OLJ5MAXTf",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT acquirer, target, target_description, deal_type, status, value_m, currency,\n       geography, announced_date, rationale, source_count, source_url\nFROM deals\nWHERE acquirer ~* $1 OR target ~* $1 OR target_description ~* $1 OR rationale ~* $1\nORDER BY announced_date DESC NULLS LAST, last_seen DESC\nLIMIT 10;",
+        "options": {
+          "queryReplacement": "={{ [$json.pattern] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        672,
+        -240
+      ],
+      "id": "6d72a257-6e6d-4e60-9bb6-59ea247ce6dd",
+      "name": "deals",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "WzmdO87OLJ5MAXTf",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT acquirer, target, target_description, deal_type, status, value_m, currency,\n       geography, announced_date, rationale, source_count, source_url\nFROM deals\nWHERE acquirer ~* $1 OR target ~* $1\nORDER BY announced_date DESC NULLS LAST, last_seen DESC\nLIMIT 10;",
+        "options": {
+          "queryReplacement": "={{ [$json.pattern] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        672,
+        -64
+      ],
+      "id": "e290ffb5-8c12-48e6-8971-d54e8add99a1",
+      "name": "company",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "WzmdO87OLJ5MAXTf",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT to_char(date_trunc('month', COALESCE(announced_date, first_seen::date)), 'YYYY-MM') AS month,\n       count(*) AS deals,\n       array_to_string((array_agg(acquirer || ' → ' || target ORDER BY value_m DESC NULLS LAST))[1:3], '; ') AS examples\nFROM deals\nWHERE (acquirer ~* $1 OR target ~* $1 OR target_description ~* $1 OR rationale ~* $1)\n  AND COALESCE(announced_date, first_seen::date) >= current_date - interval '12 months'\nGROUP BY 1\nORDER BY 1;",
+        "options": {
+          "queryReplacement": "={{ [$json.pattern] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        672,
+        96
+      ],
+      "id": "68771269-aac2-470c-a8e8-9c724dbb66bc",
+      "name": "trend",
+      "alwaysOutputData": true,
+      "credentials": {
+        "postgres": {
+          "id": "WzmdO87OLJ5MAXTf",
+          "name": "Postgres account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 8
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        0,
+        608
+      ],
+      "id": "90f0fcbf-3bce-4d0c-a4db-e75668c55a16",
+      "name": "Every 8 hours"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse command": {
+      "main": [
+        [
+          {
+            "node": "Route command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route command": {
+      "main": [
+        [
+          {
+            "node": "deals",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "company",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "trend",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send help",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Recent news",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pack results": {
+      "main": [
+        [
+          {
+            "node": "Write answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Groq Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Write answer",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Write answer": {
+      "main": [
+        [
+          {
+            "node": "Send answers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start run": {
+      "main": [
+        [
+          {
+            "node": "Run ingestion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run ingestion": {
+      "main": [
+        [
+          {
+            "node": "Ingestion stats",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ingestion stats": {
+      "main": [
+        [
+          {
+            "node": "Send ingestion report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recent news": {
+      "main": [
+        [
+          {
+            "node": "Pack results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "deals": {
+      "main": [
+        [
+          {
+            "node": "Pack results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "company": {
+      "main": [
+        [
+          {
+            "node": "Pack results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "trend": {
+      "main": [
+        [
+          {
+            "node": "Pack results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Every 8 hours": {
+      "main": [
+        [
+          {
+            "node": "Start run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "errorWorkflow": "qqpTUVUqnp1EyuzY",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "15a0ea1e-1bff-491d-9e94-217efacb6ebe",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "aa23814b3ae9bc060dfe8ef467fde5016449dbd19af80bbe5afadf0e8861cc80"
+  },
+  "nodeGroups": [],
+  "id": "d6mlf4bEUm0Uj5lZ",
+  "tags": []
+}

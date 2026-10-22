@@ -1,0 +1,122 @@
+{
+  "name": "M&A error handler",
+  "nodes": [
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "5ded22b6-6a4f-4b46-b00e-970e2fdb25a2",
+      "name": "Error Trigger"
+    },
+    {
+      "parameters": {
+        "chatId": "8834540662",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        384,
+        -64
+      ],
+      "id": "7fc4da8f-2acf-4f8c-ba6c-9ece9b0bf4d6",
+      "name": "Alert Admin",
+      "webhookId": "7ede5595-f0a7-4899-b8e9-3270ec653f48",
+      "retryOnFail": true,
+      "waitBetweenTries": 3000,
+      "credentials": {
+        "telegramApi": {
+          "id": "3fWdiwNWnFfTR2yZ",
+          "name": "M&A bot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": " INSERT INTO error_log (workflow, node, message, execution_url) VALUES ($1, $2, $3, $4);",
+        "options": {
+          "queryReplacement": "={{ [$json.workflow, $json.node, $json.message, $json.execution_url] }}"
+        }
+      },
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.7,
+      "position": [
+        384,
+        96
+      ],
+      "id": "7b2b98cb-7989-4b8f-9ac6-71ce3caf64e8",
+      "name": "Log error",
+      "credentials": {
+        "postgres": {
+          "id": "WzmdO87OLJ5MAXTf",
+          "name": "Postgres account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "const e = $input.first().json;\nconst ex = e.execution || {};\nconst wf = e.workflow || {};\nconst err = ex.error || e.trigger?.error || {};\n\nconst message = (err.message || 'Unknown error').slice(0, 500);\nconst node = ex.lastNodeExecuted || 'n/a';\n\nconst text = [\n  'n8n workflow failed',\n  `Workflow: ${wf.name || 'n/a'}`,\n  `Node: ${node}`,\n  `Error: ${message}`,\n  `Execution: ${ex.url || ex.id || 'n/a'}`,\n  `Time: ${new Date().toISOString()}`\n].join('\\n');\n\nreturn [{ json: { workflow: wf.name || '', node, message, execution_url: ex.url || '', text } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        0
+      ],
+      "id": "fa26c9f7-6e93-40c0-a40d-19939d1ecb72",
+      "name": "Format error"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Format error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format error": {
+      "main": [
+        [
+          {
+            "node": "Alert Admin",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "ce31d86a-656b-49c2-9fa2-7895001b9eac",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "aa23814b3ae9bc060dfe8ef467fde5016449dbd19af80bbe5afadf0e8861cc80"
+  },
+  "nodeGroups": [],
+  "id": "qqpTUVUqnp1EyuzY",
+  "tags": []
+}
